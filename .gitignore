@@ -1,0 +1,51 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+.idea/
+.vscode/
+*.log
+.DS_Store
+# Hugging Face / model caches (never commit model weights)
+.cache/
+models/
+*.bin
+*.safetensors
+
+# Exports, local secrets and build artefacts
+contradix_*.csv
+contradix_*.pdf
+.streamlit/secrets.toml
+*.egg-info/
+.coverage
+htmlcov/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Environment variables
+.env
+.env.local
+.env.*
+
+# Model caches
+.cache/
+models_cache/
+
+# Temporary test files
+test_A.txt
+test_B.txt
+
+# OS
+.DS_Store
+Thumbs.db
