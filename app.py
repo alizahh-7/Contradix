@@ -49,7 +49,7 @@ from utils.results import (
 from utils.styles import CSS
 
 st.set_page_config(page_title="CONTRADIX | Beyond Words. Detect the Contradiction.", page_icon="🔍",
-                   layout="wide", initial_sidebar_state="expanded")
+                   layout="wide", initial_sidebar_state="collapsed")
 
 MODES = [MODE_TEXT, MODE_DOC, MODE_TEXT_DOC]
 DEFAULTS = ComparisonConfig()
@@ -61,6 +61,7 @@ LOADING_HINT = "Running the NLP models... the very first run downloads them (a f
 def init_state() -> None:
     st.session_state.setdefault("results", {})      # mode -> bundle (last result for each mode)
     st.session_state.setdefault("_run_cache", {})   # input fingerprint -> raw backend payload
+    st.session_state.setdefault("show_workspace", False)  # landing page first
 
 
 # ------------------------------------------------------------------ callbacks
@@ -80,12 +81,6 @@ def load_sample_documents() -> None:
 def load_text_doc_demo() -> None:
     st.session_state["tvd_statement"] = EXAMPLE_TEXT_VS_DOC
     st.session_state["td_sample"] = True
-
-
-def reset_settings() -> None:
-    st.session_state.update({"cfg_sim": DEFAULTS.similarity_threshold, "cfg_max": DEFAULTS.max_pairs,
-                             "cfg_topk": DEFAULTS.top_k, "cfg_con": DEFAULTS.contradiction_threshold,
-                             "cfg_both": DEFAULTS.bidirectional})
 
 
 # ------------------------------------------------------------- cached helpers
@@ -115,36 +110,21 @@ def model_status() -> tuple[bool, bool]:
             inference._load.cache_info().currsize > 0)
 
 
-# ================================================================ sidebar
+# =========================================== fixed internal retrieval settings
 def sidebar_settings() -> ComparisonConfig:
-    with st.sidebar:
-        st.markdown("## ⚙️ Retrieval settings")
-        st.caption("Used by Document vs Document and Text vs Document. Text vs Text compares the two "
-                   "statements directly.")
-        sim_thr = st.slider("Similarity threshold", 0.10, 0.95, DEFAULTS.similarity_threshold, 0.01, key="cfg_sim",
-                            help="Only sentence pairs at least this similar are sent to the NLI model.")
-        max_pairs = st.slider("Maximum sentence pairs", 1, 100, DEFAULTS.max_pairs, key="cfg_max",
-                              help="Hard cap on how many pairs are analysed with NLI.")
-        top_k = st.slider("Matches kept per sentence", 1, 5, DEFAULTS.top_k, key="cfg_topk",
-                          help="Document vs Document: best matches kept for each sentence.")
-        con_thr = st.slider("Contradiction threshold", 0.20, 0.95, DEFAULTS.contradiction_threshold, 0.01,
-                            key="cfg_con", help="Minimum contradiction probability to flag a pair.")
-        both = st.checkbox("Also check reverse NLI direction", value=DEFAULTS.bidirectional, key="cfg_both",
-                           help="Runs hypothesis -> premise as well (slower).")
-        st.button("Reset to defaults", key="cfg_reset", on_click=reset_settings)
-        st.divider()
-        emb_ok, nli_ok = model_status()
-        st.markdown("**Model status**")
-        st.caption(f"{'🟢' if emb_ok else '⚪'} Similarity model (MiniLM): {'loaded' if emb_ok else 'loads on first analysis'}")
-        st.caption(f"{'🟢' if nli_ok else '⚪'} NLI model (DeBERTa-v3-small): {'loaded' if nli_ok else 'loads on first analysis'}")
-        st.caption("Models are cached for the whole session and run locally on CPU. No API keys.")
-    return ComparisonConfig(similarity_threshold=sim_thr, max_pairs=max_pairs, top_k=top_k,
-                            contradiction_threshold=con_thr, bidirectional=both)
+    """Keep retrieval active without exposing configuration controls in the sidebar."""
+    return ComparisonConfig(
+        similarity_threshold=0.43,
+        max_pairs=25,
+        top_k=2,
+        contradiction_threshold=0.29,
+        bidirectional=True,
+    )
 
 
 # ================================================================ hero / home
 def render_hero() -> None:
-    st.markdown(ui.hero_chips(["NLP", "Semantic similarity", "Natural language inference", "Runs locally on CPU"]),
+    st.markdown(ui.hero_chips(["NLP", "Semantic similarity", "Natural language inference"]),
                 unsafe_allow_html=True)
     st.title("CONTRADIX")
     st.markdown(ui.hero_text(
@@ -532,7 +512,7 @@ def about() -> None:
     st.markdown(ui.section_header("Reading the results"), unsafe_allow_html=True)
     st.markdown(ui.info_cards([
         {"title": "Red · Potential contradiction", "kind": "danger",
-         "text": "The contradiction probability reached your threshold (or the reverse direction did)."},
+         "text": "The contradiction probability reached the configured threshold (or the reverse direction did)."},
         {"title": "Amber · Needs review", "kind": "warning",
          "text": "The sentences share a subject but give different percentages, dates or durations. Might be an update, a different scope, or a real conflict."},
         {"title": "Green · Consistent", "kind": "success", "text": "The model predicts entailment."},
@@ -550,11 +530,24 @@ def about() -> None:
     ]), unsafe_allow_html=True)
 
     st.markdown(ui.section_header("Technologies used"), unsafe_allow_html=True)
-    st.markdown(ui.tech_badges([
-        ("Python 3.11", "language"), ("Streamlit", "dashboard + custom CSS"), ("spaCy", "sentence segmentation"),
-        ("Sentence-Transformers", "all-MiniLM-L6-v2"), ("Hugging Face Transformers", "nli-deberta-v3-small"),
-        ("PyTorch (CPU)", "model inference"), ("PyMuPDF", "PDF text"), ("python-docx", "DOCX text"),
-        ("ReportLab", "PDF report"), ("pytest", "automated tests")]), unsafe_allow_html=True)
+    
+    technologies = [
+        "Python 3.11", "Streamlit", "spaCy",
+        "Sentence-Transformers", "Hugging Face Transformers",
+        "PyTorch (CPU)", "PyMuPDF", "python-docx",
+        "ReportLab", "pytest"
+    ]
+
+    badges = "".join(
+        f'<span style="display:inline-block;background:#fffdf8;'
+        f'color:#26343a;-webkit-text-fill-color:#26343a;'
+        f'border:1px solid #bfc5bd;border-radius:8px;'
+        f'padding:10px 14px;margin:4px;font-weight:600;">{name}</span>'
+        for name in technologies
+    )
+
+    st.markdown(badges, unsafe_allow_html=True)
+
 
     st.markdown(ui.section_header("Known limitations"), unsafe_allow_html=True)
     st.markdown(ui.info_cards([
@@ -569,12 +562,182 @@ def about() -> None:
 st.markdown(CSS, unsafe_allow_html=True)
 init_state()
 config = sidebar_settings()
-render_hero()
-tab_work, tab_about = st.tabs(["🔬  Analysis workspace", "📘  About & methodology"])
-with tab_work:
-    workspace(config)
-with tab_about:
-    about()
-st.divider()
-st.caption("CONTRADIX · Semantic Contradiction Detection and Document Consistency Analysis Using NLP · "
-           "Results are potential findings for human review.")
+if st.session_state["show_workspace"]:
+    # Workspace-only visual theme. The landing page HTML and styling above are untouched.
+    st.markdown("""
+    <style>
+    :root { color-scheme: light !important; }
+    html, body, .stApp, [data-testid="stAppViewContainer"],
+    [data-testid="stMain"], [data-testid="stMainBlockContainer"] {
+      background-color: #faf7f0 !important; color: #26343a !important;
+    }
+    .stApp::before {
+      content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNjAwIDk1MCIgcHJlc2VydmVBc3BlY3RSYXRpbz0ieE1pZFlNaWQgc2xpY2UiPjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0icGFwZXIiIHgyPSIwIiB5Mj0iMSI+PHN0b3Agc3RvcC1jb2xvcj0iI2ZhZjdmMCIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2VhZThlMCIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJyaWRnZSIgeDI9IjAiIHkyPSIxIj48c3RvcCBzdG9wLWNvbG9yPSIjMzg0NjRiIiBzdG9wLW9wYWNpdHk9Ii41NyIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzM4NDY0YiIgc3RvcC1vcGFjaXR5PSIuMDM1Ii8+PC9saW5lYXJHcmFkaWVudD48bGluZWFyR3JhZGllbnQgaWQ9ImZyb250IiB4Mj0iMCIgeTI9IjEiPjxzdG9wIHN0b3AtY29sb3I9IiMyODM2M2IiIHN0b3Atb3BhY2l0eT0iLjcyIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjgzNjNiIiBzdG9wLW9wYWNpdHk9Ii4xMyIvPjwvbGluZWFyR3JhZGllbnQ+PGZpbHRlciBpZD0iZ3JhaW4iPjxmZVR1cmJ1bGVuY2UgdHlwZT0iZnJhY3RhbE5vaXNlIiBiYXNlRnJlcXVlbmN5PSIuNjUiIG51bU9jdGF2ZXM9IjMiIHNlZWQ9IjgiIHN0aXRjaFRpbGVzPSJzdGl0Y2giLz48ZmVDb2xvck1hdHJpeCB0eXBlPSJzYXR1cmF0ZSIgdmFsdWVzPSIwIi8+PGZlQ29tcG9uZW50VHJhbnNmZXI+PGZlRnVuY0EgdHlwZT0ibGluZWFyIiBzbG9wZT0iLjA3NSIvPjwvZmVDb21wb25lbnRUcmFuc2Zlcj48L2ZpbHRlcj48L2RlZnM+PHBhdGggZmlsbD0idXJsKCNwYXBlcikiIGQ9Ik0wIDBIMTYwMFY5NTBIMHoiLz48Y2lyY2xlIGN4PSIxMjEwIiBjeT0iMjUwIiByPSI3NiIgZmlsbD0iI2I5NTc0MyIgb3BhY2l0eT0iLjc4Ii8+PHBhdGggZD0iTTAgNTUwUTExMCA1MjggMjIwIDQ3MVQ0MjAgNDkyUTUxNSA0MzAgNjE1IDQ1OVQ4MDUgNDMyUTkyMCAzNTUgMTAyMCA0MjFUMTIxMCAzOTNRMTMzMCAzNTYgMTQ0MCA0MjlMMTYwMCAzODVWOTUwSDBaIiBmaWxsPSJ1cmwoI3JpZGdlKSIgb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTAgNjUzUTEzMCA1NzAgMjQ4IDYxMlQ0NDMgNTUxUTU1MCA0ODggNjcwIDU2OVQ4NjUgNTEwUTk3MCA0NjUgMTA5MCA1MzVUMTMyMCA0NjlRMTQ1MCA0MzYgMTYwMCA1MjBWOTUwSDBaIiBmaWxsPSJ1cmwoI3JpZGdlKSIgb3BhY2l0eT0iLjY1Ii8+PHBhdGggZD0iTTAgNzQ4UTE0MCA2ODAgMjU1IDcxN1Q0NTMgNjQ0UTU4NSA1OTcgNzA1IDY3MlQ5MDIgNjA0UTEwMzAgNTY4IDExNTAgNjMyVDEzODAgNTU3UTE1MTAgNTI5IDE2MDAgNTgyVjk1MEgwWiIgZmlsbD0idXJsKCNmcm9udCkiIG9wYWNpdHk9Ii43MiIvPjxwYXRoIGQ9Ik0wIDgyOVExNDggNzc2IDI4MCA4MDJUNTAwIDczOFE2MzAgNjk5IDc3MCA3NjBUOTk1IDcxOFExMTM1IDY4MCAxMjUwIDczMlQxNDcwIDY3NUwxNjAwIDY5N1Y5NTBIMFoiIGZpbGw9InVybCgjZnJvbnQpIiBvcGFjaXR5PSIuNTMiLz48cGF0aCBkPSJNMCAwSDE2MDBWOTUwSDB6IiBmaWx0ZXI9InVybCgjZ3JhaW4pIiBvcGFjaXR5PSIuNDUiLz48L3N2Zz4=') center bottom / cover no-repeat;
+      opacity: .94;
+    }
+    [data-testid="stAppViewContainer"] > .main,
+    [data-testid="stMain"], [data-testid="stMainBlockContainer"] {
+      position: relative; z-index: 1; background: transparent !important;
+    }
+    [data-testid="stHeader"], [data-testid="stToolbar"] { background: transparent !important; }
+    /* Readable workspace content: translucent paper panels over the mountain art. */
+    [data-testid="stMainBlockContainer"] {
+      background: rgba(250,247,240,.62) !important;
+      border-radius: 18px;
+    }
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4,
+    .stApp p, .stApp label, .stApp small,
+    .stApp [data-testid="stMarkdownContainer"],
+    .stApp [data-testid="stMarkdownContainer"] *,
+    .stApp [data-testid="stWidgetLabel"] *,
+    .stApp [data-testid="stCaptionContainer"] *,
+    .stApp [data-testid="stRadio"] label *,
+    .stApp [data-testid="stExpander"] summary * {
+      color: #26343a !important;
+      -webkit-text-fill-color: #26343a !important;
+    }
+    .stApp h1, .stApp h2 { font-family: Georgia, 'Times New Roman', serif !important; }
+    .stApp h1 { color: #293b3e !important; -webkit-text-fill-color: #293b3e !important;
+      background: none !important; text-shadow: none !important; }
+    .stApp [data-testid="stTabs"] [role="tablist"] { border-bottom: 1px solid #aab0ab !important; }
+    .stApp [data-testid="stTabs"] button[role="tab"] {
+      background: transparent !important; color: #48585a !important;
+      -webkit-text-fill-color: #48585a !important;
+    }
+    .stApp [data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+      border-bottom: 2px solid #a45240 !important; color: #293b3e !important;
+    }
+    .stApp [data-testid="stTabs"] button[role="tab"] * {
+      color: inherit !important; -webkit-text-fill-color: currentColor !important;
+    }
+    .stApp textarea, .stApp input, .stApp [data-baseweb="select"] > div,
+    .stApp [data-testid="stFileUploader"] section {
+      background: #fffdf8 !important; color: #26343a !important;
+      -webkit-text-fill-color: #26343a !important;
+      border: 1px solid #bfc5bd !important; border-radius: 9px !important;
+    }
+    .stApp textarea::placeholder, .stApp input::placeholder {
+      color: #65706d !important; -webkit-text-fill-color: #65706d !important; opacity: 1 !important;
+    }
+    .stApp [data-testid="stFileUploader"] section * { color: #26343a !important; }
+    .stApp .stButton > button, .stApp .stDownloadButton > button,
+    .stApp [data-testid="stBaseButton-secondary"] {
+      background: #fffdf8 !important; color: #293b3e !important;
+      -webkit-text-fill-color: #293b3e !important;
+      border: 1px solid #9da8a2 !important; border-radius: 12px !important;
+      box-shadow: none !important;
+    }
+    .stApp .stButton > button *, .stApp .stDownloadButton > button * {
+      color: inherit !important; -webkit-text-fill-color: currentColor !important;
+    }
+    .stApp .stButton > button[kind="primary"],
+    .stApp [data-testid="stBaseButton-primary"] {
+      background: #293b3e !important; color: #fffdf8 !important;
+      -webkit-text-fill-color: #fffdf8 !important; border-color: #293b3e !important;
+    }
+    .stApp .stButton > button[kind="primary"] * {
+      color: #fffdf8 !important; -webkit-text-fill-color: #fffdf8 !important;
+    }
+    .stApp [data-testid="stExpander"], .stApp [data-testid="stMetric"],
+    .stApp [data-testid="stDataFrame"], .stApp [data-testid="stAlert"],
+    .stApp [data-testid="stForm"] {
+      background: rgba(255,253,248,.94) !important;
+      border: 1px solid #c8cec5 !important; border-radius: 12px !important;
+    }
+    .stApp [data-testid="stRadio"] [role="radio"][aria-checked="true"] {
+      border-color: #a45240 !important; background-color: #a45240 !important;
+    }
+    .stApp hr { border-color: #bfc5bd !important; }
+    /* Custom HTML cards in utils.components were designed for a dark theme.
+       Repaint their surfaces AND text together, rather than only changing text. */
+    .stApp [data-testid="stMarkdownContainer"] div[style*="background"],
+    .stApp [data-testid="stMarkdownContainer"] [class*="card"],
+    .stApp [data-testid="stMarkdownContainer"] [class*="step"] {
+      background: rgba(255,253,248,.97) !important;
+      background-color: rgba(255,253,248,.97) !important;
+      border-color: #c5c8c0 !important;
+      color: #26343a !important;
+      -webkit-text-fill-color: #26343a !important;
+    }
+    .stApp [data-testid="stMarkdownContainer"] div[style*="background"] *,
+    .stApp [data-testid="stMarkdownContainer"] [class*="card"] *,
+    .stApp [data-testid="stMarkdownContainer"] [class*="step"] * {
+      color: #26343a !important;
+      -webkit-text-fill-color: #26343a !important;
+      opacity: 1 !important;
+    }
+    
+    /* Fix inline model-name highlights in About section */
+    .stApp [data-testid="stMarkdownContainer"] :not(pre) > code {
+        background: #e4e9e5 !important;
+        color: #172b30 !important;
+        -webkit-text-fill-color: #172b30 !important;
+        border: 1px solid #aebbb4 !important;
+        border-radius: 5px !important;
+        padding: 3px 6px !important;
+        font-weight: 600 !important;
+        opacity: 1 !important;
+    }
+
+    /* Streamlit code examples intentionally stay dark, but use bright legible text. */
+    .stApp [data-testid="stCode"], .stApp [data-testid="stCode"] pre,
+    .stApp [data-testid="stCode"] code {
+      background: #17232b !important; color: #f8f5ec !important;
+      -webkit-text-fill-color: #f8f5ec !important;
+    }
+    .stApp [data-testid="stCode"] * {
+      color: #f8f5ec !important; -webkit-text-fill-color: #f8f5ec !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    if st.button("← Back to home", key="back_home"):
+        st.session_state["show_workspace"] = False
+        st.rerun()
+    st.title("CONTRADIX")
+    tab_work, tab_about = st.tabs(["🔬  Analysis workspace", "📘  About & methodology"])
+    with tab_work:
+        workspace(config)
+    with tab_about:
+        about()
+else:
+    # Static sumi-e illustration; no React, JavaScript or external asset required.
+    st.markdown(f"""
+    <style>
+    .stApp {{ background: #faf7f0 !important; color: #26343a !important; }}
+    .stApp::before {{ content: ''; position: fixed; inset: 0; pointer-events: none;
+        background: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNjAwIDk1MCIgcHJlc2VydmVBc3BlY3RSYXRpbz0ieE1pZFlNaWQgc2xpY2UiPjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0icGFwZXIiIHgyPSIwIiB5Mj0iMSI+PHN0b3Agc3RvcC1jb2xvcj0iI2ZhZjdmMCIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2VhZThlMCIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJyaWRnZSIgeDI9IjAiIHkyPSIxIj48c3RvcCBzdG9wLWNvbG9yPSIjMzg0NjRiIiBzdG9wLW9wYWNpdHk9Ii41NyIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzM4NDY0YiIgc3RvcC1vcGFjaXR5PSIuMDM1Ii8+PC9saW5lYXJHcmFkaWVudD48bGluZWFyR3JhZGllbnQgaWQ9ImZyb250IiB4Mj0iMCIgeTI9IjEiPjxzdG9wIHN0b3AtY29sb3I9IiMyODM2M2IiIHN0b3Atb3BhY2l0eT0iLjcyIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjgzNjNiIiBzdG9wLW9wYWNpdHk9Ii4xMyIvPjwvbGluZWFyR3JhZGllbnQ+PGZpbHRlciBpZD0iZ3JhaW4iPjxmZVR1cmJ1bGVuY2UgdHlwZT0iZnJhY3RhbE5vaXNlIiBiYXNlRnJlcXVlbmN5PSIuNjUiIG51bU9jdGF2ZXM9IjMiIHNlZWQ9IjgiIHN0aXRjaFRpbGVzPSJzdGl0Y2giLz48ZmVDb2xvck1hdHJpeCB0eXBlPSJzYXR1cmF0ZSIgdmFsdWVzPSIwIi8+PGZlQ29tcG9uZW50VHJhbnNmZXI+PGZlRnVuY0EgdHlwZT0ibGluZWFyIiBzbG9wZT0iLjA3NSIvPjwvZmVDb21wb25lbnRUcmFuc2Zlcj48L2ZpbHRlcj48L2RlZnM+PHBhdGggZmlsbD0idXJsKCNwYXBlcikiIGQ9Ik0wIDBIMTYwMFY5NTBIMHoiLz48Y2lyY2xlIGN4PSIxMjEwIiBjeT0iMjUwIiByPSI3NiIgZmlsbD0iI2I5NTc0MyIgb3BhY2l0eT0iLjc4Ii8+PHBhdGggZD0iTTAgNTUwUTExMCA1MjggMjIwIDQ3MVQ0MjAgNDkyUTUxNSA0MzAgNjE1IDQ1OVQ4MDUgNDMyUTkyMCAzNTUgMTAyMCA0MjFUMTIxMCAzOTNRMTMzMCAzNTYgMTQ0MCA0MjlMMTYwMCAzODVWOTUwSDBaIiBmaWxsPSJ1cmwoI3JpZGdlKSIgb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTAgNjUzUTEzMCA1NzAgMjQ4IDYxMlQ0NDMgNTUxUTU1MCA0ODggNjcwIDU2OVQ4NjUgNTEwUTk3MCA0NjUgMTA5MCA1MzVUMTMyMCA0NjlRMTQ1MCA0MzYgMTYwMCA1MjBWOTUwSDBaIiBmaWxsPSJ1cmwoI3JpZGdlKSIgb3BhY2l0eT0iLjY1Ii8+PHBhdGggZD0iTTAgNzQ4UTE0MCA2ODAgMjU1IDcxN1Q0NTMgNjQ0UTU4NSA1OTcgNzA1IDY3MlQ5MDIgNjA0UTEwMzAgNTY4IDExNTAgNjMyVDEzODAgNTU3UTE1MTAgNTI5IDE2MDAgNTgyVjk1MEgwWiIgZmlsbD0idXJsKCNmcm9udCkiIG9wYWNpdHk9Ii43MiIvPjxwYXRoIGQ9Ik0wIDgyOVExNDggNzc2IDI4MCA4MDJUNTAwIDczOFE2MzAgNjk5IDc3MCA3NjBUOTk1IDcxOFExMTM1IDY4MCAxMjUwIDczMlQxNDcwIDY3NUwxNjAwIDY5N1Y5NTBIMFoiIGZpbGw9InVybCgjZnJvbnQpIiBvcGFjaXR5PSIuNTMiLz48cGF0aCBkPSJNMCAwSDE2MDBWOTUwSDB6IiBmaWx0ZXI9InVybCgjZ3JhaW4pIiBvcGFjaXR5PSIuNDUiLz48L3N2Zz4=') center bottom / cover no-repeat;
+        opacity: .94; z-index: 0; }}
+    [data-testid="stAppViewContainer"] > .main {{ position: relative; z-index: 1; background: transparent; }}
+    [data-testid="stHeader"] {{ background: transparent; }}
+    .contradix-landing {{ text-align: center; padding: clamp(5rem, 16vh, 10rem) 0 1.2rem; }}
+    .contradix-landing .eyebrow {{ font-size: .69rem; letter-spacing: .32em; font-weight: 650; color: #785e54; }}
+    .contradix-landing h1 {{ font-family: Georgia, serif; font-size: clamp(3.4rem, 8vw, 7.3rem);
+        font-weight: 400; letter-spacing: -.055em; line-height: 1.05; color: #24343a; margin: 1.2rem 0; }}
+    .contradix-landing .tagline {{ font-family: Georgia, serif; font-size: clamp(1.2rem, 2.5vw, 1.85rem);
+        color: #344249; margin: 0 auto 1.15rem; }}
+    .contradix-landing .description {{ max-width: 550px; margin: auto; font-size: .94rem;
+        line-height: 1.8; color: #4c5657; }}
+    .stButton > button[kind="primary"] {{ border-radius: 30px; background: #293b3e; border: 0;
+        color: #fff; min-height: 3.2rem; }}
+    .stButton > button[kind="primary"]:hover {{ background: #42595b; color: #fff; }}
+    </style>
+    <section class="contradix-landing">
+       <div class="eyebrow">SEMANTIC CONTRADICTION DETECTION</div>
+       <h1>CONTRADIX</h1>
+       <p class="tagline">Beyond Words. Detect the Contradiction.</p>
+       <p class="description">An NLP-powered semantic analysis platform for identifying potentially conflicting information across statements and documents.</p>
+    </section>
+    """, unsafe_allow_html=True)
+    left, middle, right = st.columns([1.2, 1, 1.2])
+    with middle:
+        if st.button("Start analyzing →", type="primary", use_container_width=True, key="start_analysis"):
+            st.session_state["show_workspace"] = True
+            st.rerun()
+    st.markdown("<div style='height:clamp(8rem,19vh,15rem)'></div>", unsafe_allow_html=True)
+    with st.expander("About & methodology"):
+        about()
+if st.session_state["show_workspace"]:
+    st.divider()
+    st.caption("CONTRADIX · Semantic Contradiction Detection and Document Consistency Analysis Using NLP · "
+               "Results are potential findings for human review.")

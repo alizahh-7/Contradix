@@ -1,0 +1,1 @@
+Fixes About/workspace dark card-on-dark text contrast using workspace-only CSS. Homepage branch unchanged. Replace app.py only. Run python -m streamlit run app.py. Python syntax checked; full local project tests not run.

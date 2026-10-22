@@ -1,0 +1,1 @@
+Replace only app.py in Contradix_Final. Landing page block unchanged. Workspace-only CSS uses the exact same embedded sumi-e SVG as the homepage, with a translucent ivory reading surface and dark readable text. All analysis and About logic retained. Run python -m streamlit run app.py; test python -m pytest -q. Python syntax verified; full project tests not run here.
